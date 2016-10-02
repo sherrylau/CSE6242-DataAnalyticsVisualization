@@ -1,0 +1,177 @@
+---
+title: "homework2"
+author: "Sherry Kawing Lau (GTID: klau37)"
+date: "September 10, 2016"
+output: pdf_document
+---
+
+### Load libraries
+
+```{r setup, include=TRUE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(gridExtra)
+```
+
+### 1. Using the mpg data, describe the relationship between highway mpg and car manufacturer. Describe which companies produce the most and least fuel efficient cars, and display a graph supporting your conclusion.
+
+```{r,fig.width=7, fig.height=5, warning=FALSE}
+data(mpg)
+
+mpg_mfr_summary = mpg %>% group_by(manufacturer) %>% 
+                    summarize(minHwy = min(hwy), 
+                    q1Hwy = quantile(hwy, 0.25), 
+                    meanHwy = mean(hwy), 
+                    medianHwy = median(hwy), 
+                    q3Hwy = quantile(hwy, 0.75), 
+                    maxHwy = max(hwy),
+                    stdHwy = sd(hwy))
+mpg_mfr_summary = data.frame(mpg_mfr_summary)
+mpg_mfr_summary = mpg_mfr_summary[order(-mpg_mfr_summary$medianHwy),]
+row.names(mpg_mfr_summary) = NULL
+kable(mpg_mfr_summary)
+
+ggplot(mpg, aes(x=reorder(manufacturer, hwy), y=hwy)) + 
+  geom_boxplot(aes(fill=manufacturer)) + 
+  coord_flip() +
+  labs(x="Manufacturer", y="Highway Mpg", title="Highway Mpg by Manufacturer Boxplot")
+```
+
+The table displays above provides descriptive statistics summary, including minimum, 25% quantile, mean, median, 75% quantile, maximum and standard deviation by manufacturer. For the ease of visualization, the information are provided with boxplot which are sorted by highway mpg. Boxplot are filled with different color for various manufacturer. From the boxplot and summary table, we are able to tell the centrality and spread of highway mpg by different manufacturer.
+
+From the table and boxplot, average highway mpg varies by manufacturer. Manufacturer has the highest variance is toyota and second with volkswagen which variance seems to be driven by the two outliers that with highway mpg above 40.
+
+Also from the boxplot:
+
+- Honda appears to produce the most fuel efficient cars which has the highest median highway mpg of 32
+- Land Rover appears to produce the least fuel efficient cars has the lowest median highway mpg of 16.5
+
+### 2. Using the mpg data, explore the three-way relationship between highway mpg, city mpg, and model class. What are your observations? Display a graph supporting these observations.
+
+```{r pressure, fig.width=7, fig.height=6.5, warning=FALSE}
+data = mpg[, c('model', 'hwy', 'cty')]
+corr = NULL
+for(model in unique(data$model)){
+  sub_data = data[data$model==model,]
+  if(nrow(sub_data)>2){
+    corr[[model]] = cor.test(sub_data$hwy, sub_data$cty)$estimate
+  }
+}
+corr_df = data.frame(model=names(corr), cor=corr)
+ggplot(data, aes(x=hwy, y=cty)) + 
+  geom_point(aes(color=model), show.legend = FALSE) + 
+  geom_text(data=corr_df, aes(label=round(cor,4)), x=-Inf, y=Inf, hjust=-0.2, vjust=1.2) + 
+  facet_wrap(~model, ncol=6) + labs(x="Highway MPG", y="City MPG", title="Highway MPG vs. City MPG scatterplot by Car Model")
+
+```
+
+Under mpg data, model class is a categorical variable while highway mpg and city mpg are continuous. The graph above summarize for each model class, the relationship between its highway mpg and city mpg with scatterplot. For each class, the upper left corner displays the correlation coefficients between its highway mpg and city mpg.
+
+Examining the facet scatterplot, model maxima and pathfinder 4wd demonstrate negative relationship between highway mpg and city mpg while for all other models, positive relationship are shown between highway mpg and city mpg.
+
+
+### 3. What are the pros and cons of using a histogram vs a box plot? Which one will you prefer for what purpose?
+
+__For histogram__
+
+Pros:
+
+- Histograms are easy to apply for variables of different data type include continuous and discrete.
+- Histograms are easy to interpret and quick overview for data distribution
+
+Cons:
+
+- Histograms is hard to visualize more than one variable for comparison
+
+Purpose: 
+
+- To examine distribution of one variable
+
+__For boxplot__
+
+Pros:
+
+- Boxplot is useful for quick indication whether the distributions of variable are skewed and if outliers are present
+- Boxplot is easy for comparison of datasets or by different categories
+- Boxplot is useful to reporesent large amounts of data
+
+Cons:
+
+- Boxplot does not provide detail distribution of data as much as histogram, only quantiles are provided.
+- Boxplot is not very useful for data with small number of observations
+
+Purpose: 
+
+- To examine quantiles distribution to investigate centrality and variances and their outliers of one continuous variable group by a discrete variable or a single continuous variable for different datasets comparison.
+
+
+### 4. Generate two sets of N random points using the function runif and display a corresponding scatter plot. If you save the file to disk, what is the resulting file size for the following file formats: ps, pdf, jpeg, png? How do these values scale with increasing N?
+
+```{r, warning=FALSE}
+genDataNSave = function(N){
+  data = data.frame(x=runif(N), y=runif(N))
+  plot = ggplot(data, aes(x=x, y=y)) + geom_point()
+  ggsave(paste("./homework2/ps_",N,".ps",sep=""), plot) # Save as ps file
+  ggsave(paste("./homework2/pdf_",N,".pdf",sep=""), plot) # Save as pdf file
+  ggsave(paste("./homework2/jpeg_",N,".jpeg",sep=""), plot) # Save as jpeg file
+  ggsave(paste("./homework2/png_",N,".png",sep=""), plot) # Save as png file
+}
+genDataNSave(10)
+genDataNSave(100)
+genDataNSave(1000)
+genDataNSave(10000)
+
+size_summary = data.frame(N=c(10, 100, 1000, 10000),
+                         ps=c(6, 9, 30, 243),
+                         pdf=c(5, 6, 12, 77),
+                         jpeg=c(114, 162, 423, 793),
+                         png=c(82, 131, 424, 775))
+colnames(size_summary) = c("N", "ps (KB)", "pdf (KB)", "jpeg (KB)", "png (KB)")
+kable(size_summary)
+```
+
+The above function generate two sets of N random points, plot a scatterplot and save the files into the four file formats. Applying the function to N = 10, 100, 1000 and 10000, the table above specify file size in KB for different files format and N.
+
+Comparing different formats, pdf formats have the smallest file sizes across different N while jpeg formats have the largest file sizes. As N increases, file sizes for any format increases and pdf format have the least increasing rates compare to other file formats. 
+
+
+### 5. The diamonds dataset within ggplot2 contains 10 columns (price, carat, cut, color, etc.) for 53940 different diamonds. Type help(diamonds) for more information. Plot histograms for color, carat, and price, and comment on their shapes. Investigate the three-way relationship between price, carat, and cut. What are your conclusions? Provide graphs that support your conclusions. If you encounter computational difficulties, consider using a smaller dataframe whose rows are sampled from the original diamonds dataframe. Use the function sample to create a subset of indices that may be used to create the smaller dataframe.
+
+```{r, fig.width=7, fig.height=2.5, warning=FALSE, message=FALSE}
+data(diamonds)
+for (xvar in c('color', 'carat', 'price')){
+  if(any(grepl('factor', class(diamonds[[xvar]])))){
+    print(ggplot(diamonds, aes_string(x=xvar)) + 
+            geom_bar(fill="#3399FF") + 
+            labs(title=paste("Histogram with ", xvar, sep="")))
+  } else{
+    print(ggplot(diamonds, aes_string(x=xvar)) + 
+            geom_histogram(fill="#CC0000") +
+            labs(title=paste("Histogram with ", xvar, sep="")))
+  }
+}
+```
+
+Examining the histograms for color, category "G" has the highest number of observations (~11000) and "J" has the lowest number of records (~3000). For carat, distribution of carat is skewed to the right and most of the observations have less than 2 carat, carat that have highest number of records is ~0.5. For price, distribution is also skewed to the right but relatively flat compare to carat. Price ~2000 have the highest number of observations.
+
+```{r, fig.width=7, fig.height=6, warning=FALSE, message=FALSE}
+data = diamonds[, c("price","carat","cut")]
+corr = NULL
+for(cut in unique(data$cut)){
+  sub_data = data[data$cut==cut,]
+  if(nrow(sub_data)>2){
+    corr[[cut]] = cor.test(sub_data$price, sub_data$carat)$estimate
+  }
+}
+corr_df = data.frame(cut=names(corr), cor=corr)
+ggplot(data, aes(x=price, y=carat)) + 
+  geom_point(aes(color=cut), show.legend = FALSE) + 
+  geom_smooth(method="loess") + 
+  geom_text(data=corr_df, aes(label=round(cor,4)), x=-Inf, y=Inf, hjust=-0.2, vjust=1.2) + 
+  facet_wrap(~cut, ncol=2) + labs(x="Price", y="Carat", title="Price vs. Carat scatterplot by cut type")
+```
+
+The chart above displays for each cut category, the relationship between price and carat with scatterplot and their correlation coefficients. A LOESS smoothing line is added to each scatterplots for easier visualization of relationship between price and carat for each cut type.
+
+For any cut types, there's a positive relationship between price and carat which the higher the price the higher the carat. With fair cut type, data point are more sparse and less prominent positive relationship compare to other cut types. With ideal cut type, price and carat has the strongest positive relationship.
