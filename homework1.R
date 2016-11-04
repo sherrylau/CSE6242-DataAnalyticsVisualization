@@ -17,16 +17,7 @@ logFactorialForLoop = function(n){
 }
 
 # 3. Implement a function that computes the log of the factorial value of an integer using recursion.
-logFactorialRecursion = function(n){
-  if (n<=0){
-    print("Error: Out of Range")
-  } else if (n==1){
-    return(log(1))
-  } else{
-    sum_log = log(n) + sum(log(seq(n-1)))
-    return(sum_log)
-  }
-}
+ 
 
 # 4. Using your two implementations of log-factorial in (2) and (3) above, compute the sum of the log-factorials 
 # of the integers 1, 2, . . . , N for various N values.
