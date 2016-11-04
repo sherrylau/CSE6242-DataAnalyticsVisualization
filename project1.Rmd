@@ -1,0 +1,658 @@
+---
+title: "Project 1"
+author: 'Sherry Kawing Lau (GTID: klau37)'
+date: "10/1/2016"
+output: pdf_document
+---
+
+```{r setup, include=TRUE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(grid)
+library(gridExtra)
+library(corrplot)
+library(dplyr)
+library(knitr)
+load('movies_merged')
+```
+
+### Q1. The variable Type captures whether the row is a movie, a TV series, or a game. Remove all rows that do not correspond to movies. How many rows did you remove?
+
+```{r}
+# Remove Rows that are not correspond to movie
+movies = movies_merged[movies_merged$Type=="movie",]
+# Count number of rows deleted by differencing before and after removal
+print(paste("There's", nrow(movies_merged) - nrow(movies), 
+            "rows removed that do not correspond to movies", sep=" "))
+```
+
+### Q2. The variable Runtime represents the length of the title as a string. Write R code to convert it to a numeric value (in minutes) and replace Runtime with the new numeric column. Investigate and describe the distribution of that value and comment on how it changes over years (variable Year) and how it changes in relation to the budget (variable Budget).
+
+
+#### Part 1: Convert Runtime from string to numeric
+```{r}
+# Function to convert Runtime to numeric column
+convertRuntimeString = function(data_column){
+  minute = NULL
+  for(i in 1:length(data_column)){
+    if(data_column[i]=="N/A"){
+      minute[[i]] = NA
+    } else if(!grepl("h", data_column[i])){
+      min_pos = unlist(gregexpr('min', data_column[i]))
+      minute[[i]] = as.numeric(substr(data_column[i], 1, min_pos-1))
+    } else{
+      hr_pos = unlist(gregexpr('h', data_column[i]))
+      hr = as.numeric(substr(data_column[i], 1, hr_pos-1))
+      min_pos = unlist(gregexpr('min', data_column[i]))
+      min = as.numeric(substr(data_column[i], hr_pos+1, min_pos-1))
+      minute[[i]] = as.numeric(min) + hr*60
+    }
+  }
+  return(minute)
+}
+# Apply function to column Runtime
+movies$Runtime = convertRuntimeString(movies$Runtime)
+```
+
+The above code convert the string column Runtime from E.g."1 h 47 min" or "230 min" to numeric values in minutes like 107 or 230.  
+
+#### Part 2: Examine Runtime distribution
+```{r, warning=FALSE, fig.height=2.5, fig.width=6}
+summary(movies$Runtime)
+ggplot(movies, aes(x=Runtime)) + 
+  geom_histogram(bins=500) + 
+  labs(x = "Run Time", y="Frequency", title = "Movies' RunTime Histogram")
+```
+
+Examining the descriptive summary for movies' runtime, there's 759 records have NA values. Mean among all movies is 81.79 minutes and median is 90 minutes. From histograms, the distribution of runtime skewed the left indicating there's some outliers have unusually longer runtime. On the left side, there's two peaks occurred less than 100 minutes which have the highest frequency of records.   
+
+#### Part 3: Examine Runtime over year relationship
+```{r, warning=FALSE, fig.height=2.5, fig.width=6}
+ggplot(movies, aes(x=Year)) + 
+  geom_bar(fill = "#3399FF") +
+  labs(x = "Year", y = "Frequency", title = "Year Frequency Distribution")
+```
+
+
+Before examining the relationship between runtime and movies' year, the above histograms plotted the distribution of number of movies in the dataset over year. From the distribution, there's more records of movies around 2000 period.  
+
+
+```{r, warning=FALSE, fig.height=3, fig.width=6}
+ggplot(movies, aes(x=Year, y=Runtime)) +
+  geom_point(color = "#CC0000") + 
+  stat_smooth(method = "auto")
+
+movies$YearBin = cut(movies$Year, seq(1880, 2020, by=10), dig.lab=4)
+yearSummary = movies %>% group_by(YearBin) %>% 
+  summarize(
+    freq = length(Runtime),
+    min = min(Runtime, na.rm=TRUE),
+    q1 = quantile(Runtime, prob=0.25, na.rm=TRUE),
+    mean = mean(Runtime, na.rm=TRUE),
+    median = quantile(Runtime, prob=0.50, na.rm=TRUE),
+    q3 = quantile(Runtime, prob=0.75, na.rm=TRUE),
+    max = max(Runtime, na.rm=TRUE),
+    std = sd(Runtime, na.rm=TRUE)
+  )
+yearSummary = data.frame(yearSummary)
+kable(yearSummary)
+
+ggplot(movies, aes(x=YearBin, y=Runtime, fill=YearBin)) + 
+  geom_boxplot(show.legend = FALSE) + 
+  labs(x = "Binned 10-Year Interval", y="Movies' Run Time") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  coord_flip()
+```
+
+From the scatterplot of movies' year and runtime, there's a slight upward trend of Runtime span over the years. 
+
+Since there's many data points and for the ease of visualization, year is binned into every 10-year period. A boxplot and binned descriptive summary table are generated to see the quantiles, medians and outliers for each of the 10-year period. As shown under the boxplot, more obvious upward trend is presented by median and several obvious outliers exist under the period 1970 - 1990.
+
+#### Part 4: Examine Runtime and Budget relationship
+```{r, warning=FALSE, fig.height=3, fig.width=6}
+rt_bg_cor = paste("Corr ", 
+                  round(cor(movies$Runtime, movies$Budget, use="complete.obs")*100,2),
+                  "%",sep="")
+rt_bg_grob = grobTree(textGrob(rt_bg_cor , x=0.1,  y=0.95, hjust=0))
+
+ggplot(movies, aes(x=Budget, y=Runtime)) +
+  geom_point(color = "#CC0000") +
+  annotation_custom(rt_bg_grob) +
+  labs(x="Budget", y="Runtime", title="Runtime vs. Budget Scatterplot")
+
+movies$BudgetBin = cut(movies$Budget, 
+                       breaks=c(quantile(movies$Budget, probs = seq(0, 1, by = 0.25), 
+                                         na.rm=TRUE, include.lowest=TRUE, right=TRUE)),
+                       dig.lab=10)
+budgetSummary = movies %>% group_by(BudgetBin) %>% 
+                          summarize(
+                            freq = length(Runtime),
+                            min = min(Runtime, na.rm=TRUE),
+                            q1 = quantile(Runtime, prob=0.25, na.rm=TRUE),
+                            mean = mean(Runtime, na.rm=TRUE),
+                            median = quantile(Runtime, prob=0.50, na.rm=TRUE),
+                            q3 = quantile(Runtime, prob=0.75, na.rm=TRUE),
+                            max = max(Runtime, na.rm=TRUE),
+                            std = sd(Runtime, na.rm=TRUE)
+                          )
+budgetSummary = data.frame(budgetSummary)
+kable(budgetSummary)
+
+ggplot(movies, aes(x=BudgetBin, y=Runtime, fill=BudgetBin)) +
+  geom_boxplot(show.legend=FALSE) +
+  labs(x = "Binned 10-Year Interval", y="Movies' Run Time") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  coord_flip()
+```
+
+From the scatterplot of movies runtime and budget, there's a slightly positive relationship with pearson correlation 0.29. 
+
+Since there's ~35000 records have NA value under budget, it's interesting to see the spread and centrality of runtime for budget with NA and without. A binned budget column is created based on quantile of non NA budget records. A boxplot and summary table is generated for runtime by binned budget. From boxplot, the positive trend of budget and runtime is consistent with the scatterplot for those records have non-NA budget. For those with NA, runtime are more sparse and have lower quantiles and median values compare to those have budget records.
+
+### Q3. The column Genre represents a list of genres associated with the movie in a string format. Write code to parse each text string into a binary vector with 1s representing the presence of a genre and 0s the absence and add it to the dataframe as additional columns. For example, if there are a total of 3 genres: Drama, Comedy, and Action a movie that is both Action and Comedy should be represented by a binary vector (0, 1, 1). Note that you need to first compile a dictionary of all possible genres and then figure out which movie has which genres (you can use the R tm package to create the dictionary). Graph and describe the relative proportions of titles having the top 10 genres and examine how the distribution of gross revenue (variable Gross) changes across genres.
+
+#### Part 1: Get a dictionary of all possible genres
+```{r, warning=FALSE, fig.height=3, fig.width=6}
+# Split individual genre in a cell by comma and convert into list
+genre = unlist(strsplit(movies$Genre, ','))
+# Trim whitespace
+genre = gsub(' ', '', genre)
+# Change to lower case
+genre = tolower(genre)
+# Remove punctuation
+genre = gsub("[[:punct:]]", "", genre)
+# Get unique set of genre
+genre = unique(genre)
+# List all the unique genre
+print(genre)
+```
+
+In case any duplicate causes by whitespace, punctuation and capitalization, unique genre list is created with these handled. In the dictionary, there's 29 unique type of genres.
+
+#### Part 2: Create binary vector column for each genre
+```{r, warning=FALSE, fig.height=3, fig.width=6}
+# change Genre column under 
+movies$GenreModified = tolower(movies$Genre)
+# trim whitespace
+movies$GenreModified = gsub(" ", "", movies$GenreModified)
+# replace comma by space
+movies$GenreModified = gsub(",", " ", movies$GenreModified)
+# remove punctuation
+movies$GenreModified = gsub("[[:punct:]]", "", movies$GenreModified)
+# Create binary vector for each type of genre
+genre_binary_matrix = NULL
+for (i in 1:length(genre)){
+  g = genre[i]
+  binary_v = as.numeric(grepl(paste('\\b',g,'\\b', sep=""), movies$GenreModified))
+  genre_binary_matrix = cbind(genre_binary_matrix, binary_v)
+}
+genre_binary_df = data.frame(genre_binary_matrix)
+colnames(genre_binary_df) = paste("Genre_", genre, sep="")
+movies = cbind(movies, genre_binary_df)
+```
+
+Similar procedures of lower case, removing punctuation and trimming whitespace applied to the column Genre under movie dataset to be consistent with the genre dictionary above. For each of the 29 genres, the code will check if the name exist in the column Genre under the dataset. If yes, 1 will be assigned and 0 otherwise.
+
+#### Part 3: Graph and describe the relative proportions of titles having the top 10 genres
+```{r, warning=FALSE, fig.height=3, fig.width=6}
+# Check if any movies record has no title
+movies$Title[is.na(movies$Title)]
+# Count the number of movies in each genre
+genreSummary = data.frame(genre=names(genre_binary_df),num_movies=colSums(genre_binary_df))
+genreSummary$genre = gsub("Genre_", "", genreSummary$genre)
+genreSummary$per_movies = genreSummary$num_movies / nrow(movies)
+genreSummary = genreSummary[order(-genreSummary$per_movies),]
+genreSummary$rank = seq(1:nrow(genreSummary))
+genreSummary$rank2 = sprintf("%02d", genreSummary$rank)
+row.names(genreSummary) = NULL
+
+ggplot(genreSummary, aes(x=reorder(genre, per_movies), y=per_movies)) + 
+  geom_bar(stat="identity", fill="#ff9933") +
+  geom_text(aes(label=round(per_movies*100,1))) + 
+  scale_y_continuous(labels = scales::percent) +
+  coord_flip() +
+  labs(x="Movies' Genres", y="Proportion of Movies")
+
+kable(head(genreSummary,10))
+```
+
+Checked all the records have value for movies Title before answering the question
+
+Adding up all the 1 in each binary vector for genres, it shows the number of movies that fall into each genre and proportion is calculated by dividing the number of movies for each genre by the total number of movies in the dataset. 
+
+The bar plot above displays the percentage of movies across different genres and sorted by descending proportion. Visually, in rank, (1) drama , (2) comedy, (3) short, (4) romance, (5) action, (6) crime, (7) thriller, (8) documentary, (9) adventure and (10) animation are the top 10 genres. Count of movies and their proportion by genre are summarized in the above table for top 10 genres.
+
+#### Part 4: Examine distribution of gross revenue changes across genres
+```{r, warning=FALSE, fig.height=3, fig.width=6}
+summary(movies$Gross)
+
+genre = genreSummary$genre
+newGenreDF = NULL
+for (g in genre){
+  # Filter dataset to include 1 if genre present in the record
+  genre_data = movies[movies[[paste("Genre_",g,sep="")]]==1,]
+  genre_data = genre_data[,c("Title","Gross")]
+  genre_data$genre = g
+  newGenreDF = rbind(newGenreDF, genre_data)
+}
+
+newGenreDF = merge(newGenreDF, genreSummary[,c("genre","rank")], by="genre")
+
+ggplot(newGenreDF, aes(x=reorder(genre, -rank), y=Gross, fill=genre)) + 
+  geom_boxplot(show.legend=FALSE) +
+  coord_flip() +
+  labs(x="Genre", y="Gross Revenue", 
+       title="Gross Revenue by Genre Boxplot sorted by Movies' Proportion")
+```
+
+Examining the descriptive summary of gross revenue, ~35000 records have NA values.
+
+Since each movie could have multiple Genre type, a new data frame is created with using the binary vector so that each records have only 1 type of genre. For example, for movies "39 Pounds of Love", there's 3 types of genre, "Documentary, Biography, Romance". The new data frame would have 3 rows with the same title, gross revenue but different genres.
+
+Using the new data frame, a boxplot is created by genre for gross revenue (~5000 with non-NA values), it is sorted by the genre with the highest proportion of movies at the top and descendingly. Examining the boxplot, animation, adventure, action, scifi, family/fantasy appears to have top 5 highest median gross revenue. While drame, romance, action, adventure and fantasy show some high extreme outliers gross revenue. For most of the genre, gross revenue has high variance.
+
+
+### Q4. The dataframe was put together by merging two different sources of data and it is possible that the merging process was inaccurate in some cases (the merge was done based on movie title, but there are cases of different movies with the same title). The first source’s release time was represented by the column Year (numeric representation of the year) and the second by the column Release (string representation of release date). Find and remove all rows where you suspect a merge error occurred based on a mismatch between these two variables. To make sure subsequent analysis and modeling work well, avoid removing more than 10% of the rows that have a present Gross variable. What is your precise removal logic and how many rows did you end up removing?
+```{r, warning=FALSE, fig.height=3, fig.width=6}
+summary(movies$Year)
+movies$Released = as.Date(movies$Released, "%Y-%m-%d")
+movies$ReleasedYear = as.numeric(format(movies$Released, "%Y"))
+summary(movies$ReleasedYear)
+movies$YearReleasedDiff = ifelse(movies$Year == movies$ReleasedYear, "Y", "N")
+summary(as.factor(movies$YearReleasedDiff))
+movies$YearReleasedDiff2 = ifelse((
+  (movies$Year) == movies$ReleasedYear |
+  (movies$Year+1) == movies$ReleasedYear |
+  (movies$Year-1) == movies$ReleasedYear),
+  "Y","N")
+```
+
+To investigate the mismatch merge, firstly examining the descriptive summary of column "year", there's no NA values. Secondly, a "ReleasedYear" column is extracted from the string "Released" Column of its year. 
+
+Examining the descriptive summary of Released Year, there's 4949 rows are NA. For the rows associated with Released Year as NA value, they are suspected to be those mis-match records.
+
+One new column "YearReleasedDiff" is created to indicate the mismatch of the column "Year" and the extracted year from released column "ReleasedYear". For "ReleasedYear" with value "N" and "NA", they indicate differences between "Year" and "ReleasedYear" which are also suspected to be those mis-match records. To summarize, from descriptive summary of "YearReleasedDiff", there's 29324 indicates "Y" (Same value between Year and Released Year), there's 5727 indicates "N" (Different value between Year and Released Year) and 4949 indicates "NA" (Released Year have NA values).
+
+Another column "YearReleasedDiff2" is created to indicate the mismatch of the column "Year" and the extracted year from released column "Released Year" with +/- 1 year of marginal error. Similarly, value with "N" and "NA" indicates mismatch records. To summarize "YearReleasedDiff2", there's 33232 indicates "Y" (Same value between =/+/- 1 Year and Released Year), there's 1819 indicates "N" (Different value between =/+/- 1 Year and Released Year) and 4949 indicates "NA".
+
+```{r, warning=FALSE, fig.height=3, fig.width=6}
+# Original dataset % Present Gross Records
+org_gross = length(movies$Gross[!is.na(movies$Gross)])
+print(org_gross)
+
+# Filter out mismatch Year and Released Year using "YearReleasedDiff"
+movies_m1 = subset(movies, YearReleasedDiff=="Y")
+nrow(movies_m1)
+# Method 1 % Present Gross Records
+m1_gross = length(movies_m1$Gross[!is.na(movies_m1$Gross)])
+print(m1_gross)
+print((org_gross-m1_gross)/org_gross)
+
+# Filter out mismatch Year and Released Year using "YearReleasedDiff2"
+movies_m2 = subset(movies, YearReleasedDiff2=="Y")
+nrow(movies_m2)
+# Method 2 % Present Gross Records
+m2_gross = length(movies_m2$Gross[!is.na(movies_m2$Gross)])
+print(m2_gross)
+print((org_gross-m2_gross)/org_gross)
+```
+
+With the two elements of suspiscous mismatch records, two methods of filtering is attempted and the selected method will be based on the one with < 10% that have present Gross values:
+
+* 1. (Exact Match) Filter data based on "YearReleasedDiff"=="Y":
+* 2. (+/- 1 Year Broader Match) Filter data based on "YearReleasedDiff2"=="Y"
+
+Originally, out of 40,000 records 4558 of the records have present gross revenue records. 
+
+Using method 1, out of 29324 records 3743 of the records have present gross revenue records. Comparing to original dataset, 18% of records with present gross values are removed.
+
+Using method 2, out of 33232 records 4422 of the records have present gross revenue records. Comparing to original dataset, 3% of records with present gross values are removed. Since this is <10% removal, this method is more prefer.
+
+
+### Q5. An important question is when to release a movie. Investigate the relationship between release date and gross revenue and comment on what times of year are most high revenue movies released in. Does your answer changes for different genres? Based on the data, can you formulate a genre-based recommendation for release date that is likely to increase the title’s revenue? If you have a recommendation motivate it with the appropriate disclaimers, or otherwise explain why you are unable to produce a recommendation.
+
+#### Part 1: What times of year are most high revenue movies released in 
+```{r, warning=FALSE, fig.height=3, fig.width=6}
+movies_m2$ReleasedMonth = format(movies_m2$Released, "%m")
+movies_m2$ReleasedDay = format(movies_m2$Released, "%d")
+
+ggplot(movies_m2, aes(x=ReleasedMonth, y=Gross)) + 
+  geom_boxplot() + 
+  labs(x="Month of Released", y="Gross Revenue",
+       title="Gross Revenue by Month of Released Boxplot")
+
+ggplot(movies_m2, aes(x=ReleasedDay, y=Gross)) +
+  geom_boxplot() +
+  labs(x="Day of Released", y="Gross Revenue",
+       title="Gross Revenue by Day of Released Boxplot")
+```
+
+As previously shown, 4422 out of 33232 (13%) of records have present gross revenue.
+
+Two additional columns are created from filtered dataset under Q4, movies_m2, based on "Released" column. One is the "ReleasedMonth" and the other one is "ReleasedDay" to help investigate which time of the year generate the most highest gross revenue.
+
+To examine the distribution of Gross revenue by released month, boxplot is created. From the plot, it seems like summer (05-07) has overall higher average gross revenue as well as winter (11-12). Some outliers exist in the month of Dec.
+
+To examine the distribution of Gross revenue by released day boxplot, there's no significant pattern that which day demonstrate higher gross revenue.
+
+```{r, warning=FALSE, fig.height=4, fig.width=7}
+releasedSummary = movies_m2 %>% group_by(ReleasedMonth, ReleasedDay) %>%
+  summarize(
+    count = length(Title),
+    mean = mean(Gross, na.rm=TRUE)
+  )
+
+ggplot(releasedSummary, aes(x=ReleasedMonth, y=ReleasedDay)) +
+  geom_tile(aes(fill= mean)) +
+  scale_fill_gradient(low = "white", high = "#1a3855") +
+  labs(x="Month of Released", y="Day of Released",
+       fill="Average Gross Revenue",
+       title="Average Gross Revenue by Released Day and Month Heatmap")
+```
+
+To answer the question of which time of year have the highest gross revenue, a heatmap is plotted with x-axis as Month of movies released, y-axis as Day of movies released and coloring scale indicates mean gross revenue with darker color demonstrate higher values. 
+
+As shown in the heatmap, May 4th shows the one with highest average gross revenue. Consistent with the boxplot, month 5-7, 11-12 show overall higher average gross revenue compare to other months.
+
+#### Part 2: By genres, the times of year are most high revenue movies released in 
+```{r, warning=FALSE, fig.height=7, fig.width=7}
+# Create new data frame with 1 genre per record
+genreSummary$genre2 = paste(genreSummary$rank2, ".", genreSummary$genre, sep="")
+genre = genreSummary$genre2
+newGenreDF2 = NULL
+for (g in genre){
+  # Filter dataset to include 1 if genre present in the record
+  g_string = paste("Genre_",substr(g,4,nchar(g)),sep="")
+  genre_data = movies_m2[movies_m2[[g_string]]==1,]
+  genre_data = genre_data[,c("Title","Gross","Released","ReleasedMonth","ReleasedDay")]
+  genre_data$genre = g
+  newGenreDF2 = rbind(newGenreDF2, genre_data)
+}
+
+releasedGenreSummary = newGenreDF2 %>% 
+  group_by(genre, ReleasedMonth, ReleasedDay) %>%
+  summarize(
+    count = length(Title),
+    mean = mean(Gross, na.rm=TRUE)
+  )
+
+ggplot(releasedGenreSummary, aes(x=ReleasedMonth, y=ReleasedDay)) +
+  geom_tile(aes(fill= mean)) +
+  scale_fill_gradient(low = "white", high = "#1a3855", guide=FALSE) +
+  facet_wrap(~genre) + 
+  labs(x="Month of Released", y="Day of Released",
+       fill="Average Gross Revenue",
+       title="Average Gross Revenue by Released Day and Month Heatmap")
+
+```
+
+Similar to Q3, Since each movie could have multiple Genre type, a new data frame is created with using the binary vector so that each records have only 1 type of genre. 
+
+A heatmap of average gross revenue by Released Year and Month are created for each genre. Several of the genres demonstrate differences of color scale across time of year which seems to be different compare to overall, this include: 
+
+* fantasy: highest average gross revenue appears in mid of Dec, and overall higher during summer (05-07) and winter (11-12)
+* scifi: highest average gross revenue appears in beginning of May and overall higher during summer (05-07).
+* animation, action, adventure: overall average appear to be higher then other genres an  seems to be scatter across years but relatively higher in the summer (05-07).
+* drama, comedy, romance, crime, thriller, family, mystery: overall average scatter across years.
+* short, documentary, horror, musical, western, music, biography, the rest of genres have relatively low average gross revenue or not enough records that have gross revenue to see trend.
+
+
+#### Part 3: Genre-based recommendation to increase gross revenue
+```{r, warning=FALSE, fig.height=4, fig.width=6}
+releasedGenreSummary2 = newGenreDF2 %>% 
+  group_by(genre) %>%
+  summarize(
+    count = length(Title),
+    count_gross = length(na.omit(Gross))
+  )
+releasedGenreSummary2 = releasedGenreSummary2[order(-releasedGenreSummary2$count_gross),]
+
+ggplot(releasedGenreSummary2, aes(x=reorder(genre,count_gross), y=count_gross)) +
+  geom_bar(stat="identity", fill="#a4cdc9") +
+  coord_flip() +
+  labs(x="Genre", y="Number of Present Gross Revenue Records",
+       title="Number of Present Gross Revenue Rows by Genre")
+```
+
+Based on the data we have, it is hard to formulate suggestion of release time by genre. In this dataset, only 13% of the data have records with gross revenue values. From the bar chart above, 3 of the genres have no present gross values and 8 of the genres have less than 100 present gross values. With this data quality, it is not sufficient to generalize recommendation by genre. However, we can say overall for all the movies, summer (05-07) and winter (11-12) demonstrate higher gross revenue.
+
+
+### Q6. There are several variables that describe ratings including IMDb ratings (imdbRating represents average user ratings and imdbVotes represents the number of user ratings) and multiple Rotten Tomatoes ratings (represented by several variables pre-fixed by tomato). Read up on such ratings on the web (for example rottentomatoes.com/about and http://www.imdb.com/help/show_leaf?votestopfaq) and investigate the pairwise relationships between these different descriptors using graphs. Comment on similarities and differences between the user ratings of IMDb and the critics ratings of Rotten Tomatoes. Comment on the relationships between these variables and the gross revenue. Which of these ratings are the most highly correlated with gross revenue (use the R function cor and remove rows with missing values)?
+
+#### Part 1: Pairwise relationships between different ratings
+```{r, warning=FALSE, fig.height=7, fig.width=7}
+rating_col = c("imdbRating","imdbVotes", "tomatoMeter","tomatoRating",
+               "tomatoReviews","tomatoFresh","tomatoRotten","tomatoUserMeter",
+               "tomatoUserRating","tomatoUserReviews")
+
+rating_col_combn = combn(rating_col, 2)
+
+corr_ls = NULL
+pairwise_graph = NULL
+for (i in 1:ncol(rating_col_combn)){
+  rating_var1 = rating_col_combn[1,i]
+  rating_var2 = rating_col_combn[2,i]
+  corr = round(cor(movies_m2[[rating_var1]], movies_m2[[rating_var2]], use="complete.obs"),4)
+  corr_ls[[i]] = corr
+  corr_grob = grobTree(textGrob(corr , x=0.1,  y=0.95, hjust=0))
+  pairwise_graph[[i]] = ggplot(movies_m2, aes_string(x=rating_var1, y=rating_var2)) +
+    geom_point(color="#f37735") +
+    geom_smooth() + 
+    annotation_custom(corr_grob)
+}
+do.call(grid.arrange, c(pairwise_graph[1:15], ncol=3))
+do.call(grid.arrange, c(pairwise_graph[16:30], ncol=3))
+do.call(grid.arrange, c(pairwise_graph[31:45], ncol=3))
+
+pair_cormtx = cor(movies_m2[,rating_col], use="complete.obs")
+corrplot(pair_cormtx, method="color", type="upper", 
+         addCoef.col=TRUE)
+```
+
+Using all the numeric rating columns (10 columns) from imdb and rotten tomatoes, scatterplots are created for each pair of the rating metrics (45 pairs of columns). Since there's many pairs of rating variables, a correlation matrix plot is also displayed to summarize the correlations between each pair of ratings.
+
+From examining the scatterplot and correlation matrix:
+
+There's 24 pairs of similar ratings trend appears to have positive relationship (Dark Blue in Correlation plot) which listed as follow:
+```{r, warning=FALSE, echo=FALSE}
+x = data.frame(t(rating_col_combn))
+x$Correlation = corr_ls
+x = x[order(-x$Correlation),]
+row.names(x) = NULL
+kable(x[x$Correlation>0.2,])
+```
+
+There's 16 pairs of ratings show weak / no relationship with absoluate value of correlation < 20% (White in Correlation plot) which listed as follow:
+```{r, warning=FALSE, echo=FALSE}
+kable(x[(x$Correlation<=0.2 & x$Correlation>=-0.2),])
+```
+
+THere's 5 pairs of ratings show difference which appears to some negative relationship (Dark Red in correlation plot)
+```{r, warning=FALSE, echo=FALSE}
+kable(x[x$Correlation< -0.2,])
+```
+
+#### Part 2: Relationship between ratings and gross revenue
+```{r, warning=FALSE, fig.height=5, fig.width=7}
+corr_gross_ls = NULL
+scatter_gross_ls = NULL
+for (i in 1:length(rating_col)){
+  rating = rating_col[i]
+  corr_gross = round(cor(movies_m2[[rating]], movies_m2$Gross, use="complete.obs"),4)
+  corr_gross_ls[[i]] = corr_gross
+  corr_gross_grob = grobTree(textGrob(corr_gross , x=0.1,  y=0.95, hjust=0))
+  scatter_gross_ls[[i]] = ggplot(movies_m2, aes_string(x=rating, y="Gross")) +
+    geom_point(color="#ff5722") + 
+    geom_smooth(color="#607d8b") +
+    annotation_custom(corr_gross_grob) +
+    labs(x=rating, y="Gross Revenue")
+}
+do.call(grid.arrange, c(scatter_gross_ls, ncol=4))
+
+```
+
+Examining the scatterplot for each rating metrics against with gross revenue and their associated pearson correlation values, "imdbVotes" has the highest positive correlation (62.69%) with gross revenue indicates that as the number of user ratings in imdb increases, gross revenue increases. For "tomatoReview" and "tomatoFresh", they also demonstrate moderate positive correlation relationship with gross revenue, which is 48.88% and 44.28% respectively.
+
+### Q7. The variable Awards describes nominations and awards in text format. Convert it to a three dimensional binary vector whose 
+first component represents no nomination or awards, 
+the second component represents some nominations/awards, and 
+the third component represents many nominations or awards. 
+The relationship between the second and the third categories should be close to 5:1 (not precisely - this is a broad guideline to help you avoid creating a third category that is useless due to being extremely small and to encourage consistency). How did you construct your conversion mechanism? How does the gross revenue distribution changes across these three categories.
+
+```{r, warning=FALSE, fig.height=5, fig.width=7}
+# Create New column name AwardsModified by lower case Awards
+movies_m2$AwardsModified = tolower(movies_m2$Awards)
+# Convert values with "n/a" to NA
+movies_m2$AwardsModified[movies_m2$AwardsModified=="n/a"] = NA
+# Examine all unique values of awards to see pattern
+# unique(movies$AwardsModified)
+# Remove punctuation from Awards column
+movies_m2$AwardsModified = gsub("[[:punct:]]","",movies_m2$AwardsModified)
+# Keep all numeric values from Awards and seperate values by comma
+movies_m2$AwardsModified = gsub("[^0-9]", ",",movies_m2$AwardsModified)
+# Split string by comma for each element in Award column
+movies_m2$AwardsModified = strsplit(movies_m2$AwardsModified,',')
+# Convert each element under the Awards column to numeric
+movies_m2$AwardsModified = sapply(movies_m2$AwardsModified,as.numeric)
+# Sum elements within each cell of Awards column to get total nominations/awards count
+movies_m2$AwardsModified = sapply(movies_m2$AwardsModified,sum, na.rm=TRUE)
+
+# Create three dimensional binary vector
+# Examine descriptive summary for number of awards/nominations
+summary(movies_m2$AwardsModified)
+
+# Create binary vector for no nomination or awards
+movies_m2$AwardsComp1 = ifelse(movies_m2$AwardsModified==0,1,0)
+print(sum(movies_m2$AwardsComp1))
+
+# Create threshold awards/nominations count to achieve 5:1 ratio
+len_nonzero = length(movies_m2$AwardsModified[movies_m2$AwardsModified!=0])
+percentile_thresh = (len_nonzero*5/6)/len_nonzero
+thresh = quantile(movies_m2$AwardsModified[movies_m2$AwardsModified!=0], percentile_thresh)
+# Number of Awards/Nominations Cutoff to distinguish some (Comp2) and many (Comp3)
+print(thresh)
+
+# Create binary vector for some nominations or awards
+movies_m2$AwardsComp2 = ifelse((movies_m2$AwardsModified>0 & movies_m2$AwardsModif<=thresh),1,0)
+print(sum(movies_m2$AwardsComp2))
+
+# Create binary vector for many nominations or awards
+movies_m2$AwardsComp3 = ifelse(movies_m2$AwardsModified>thresh,1,0)
+print(sum(movies_m2$AwardsComp3))
+```
+
+Examining the unique value of string column "Awards", there's a pattern that 
+
+1. When there's no awards nor nomination, values indicated as "N/A"
+2. When there's some or many awards or nomination, values indicates as mix of numeric (Number of awards/nominations) and their associated description (Like win, won, nominated, nomination, etc.)
+
+From the pattern described above, there's a new column "AwardsModified" following the following logic to help creating the three dimenional binary vector:
+
+1. Make "Awards" column to lower case to avoid issue causes by captialization when extracting pattern in later steps
+2. Convert values with "n/a" to NA values
+3. Remove punctuation in string
+4. Replace characters in the column by "," (E.g. From "5 wins & 1 nomination" to "5,,,,,,,1,,,,,,,,,,,") to indicates separate each numeric count and avoid concatenating the numeric values.
+5. Split string in each cell by "," and convert each element in a row to numeric (E.g. "5,,,,,,,1,,,,,,,,,,," to "5 NA NA NA NA NA NA  1 NA NA NA NA NA NA NA NA NA NA")
+6. Sum all the non-NA element in each rows to get the number of awards/nominations associated with each movies (E.g. "5 NA NA NA NA NA NA  1 NA NA NA NA NA NA NA NA NA NA" to 6).
+
+After processing the above logic, "AwardsModified" is a column of count to indicates the number of awards/nominations for each movies. Based on this column, three dimenional binary vector are created as follow:
+
+- "AwardsComp1" (Movies with NO awards/nominations): if "AwardsModified" have 0 values, then "AwardsComp1" = 1, otherwise 0.
+- "AwardsComp2" (Movies with SOME awards/nominations): if "AwardsModified" have values >0 and < thresh (* explain below), then "AwardsComp2" = 1, otherwise 0.
+- "AwardsComp3" (Movies with MANY awards/nominations): if "AwardsModified" have values > thresh (* explain below), then "AwardsComp3" = 1, otherwise 0.
+- "thresh" (Ensure "AwardsComp2" and "AwardsComp3" have 5:1 ratio):
+
+    1. Count the number of non-zero records under "AwardsModified"
+    2. Get the percentile for having the first 5/(5+1) records to be used for "AwardsCount2" ("percentile_thresh"=0.83)
+    3. Get the "AwardsModified" values that can achieve "percentile_thresh" ("thresh"=12). This will be the cutoff to apply for "AwardsComp2" and "AwardsComp3". As indicated from the output above, the sum of all the 1 in "AwardsComp2" is 10909 and sum of all the 1 is "AwardsComp3" is "2176" which achieve roughly 5:1 ratio.
+
+### Q8. Come up with two new insights (backed up by the data and graphs) that are expected, and one new insight (backed up by data and graphs) that is unexpected at first glance and do your best to motivate it. By “new” here I mean insights that are not an immediate consequence of one of the above assignments
+
+#### Part 1: Two new insights that are expected
+
+##### First expected insights
+As analysed in the previous questions, there's a strong relationship between movies' rating and gross revenue. It would be also interesting to understand if movies that was produced with higher budget will suggest more gross in general.
+
+```{r, warning=FALSE, fig.height=4, fig.width=6}
+summary(movies_m2$Budget)
+summary(movies_m2$Gross)
+
+bgt_gross_cor = paste("Corr ", round(cor(movies_m2$Budget, movies_m2$Gross, use="complete.obs")*100,2), "%", sep="")
+corr_bgt_grob = grobTree(textGrob(bgt_gross_cor , x=0.1,  y=0.95, hjust=0))
+ggplot(movies_m2, aes(x=Budget, y=Gross)) + 
+  geom_point(color="#ff5722") + 
+  geom_smooth(color="#607d8b") +
+  annotation_custom(corr_bgt_grob) +
+  labs(x="Budget",
+       y="Gross Revenue",
+       title="Scatterplot for Budget vs. Gross Revenue")
+```
+Examining the descriptive summary of budget and gross, there's 28810 missing values which is 86.7% of the dataset.
+
+From the scatterplot, with the data points that have non-NA budget and gross values (13.31% of movies). There's a strong positive relationship between budget and gross revenue. It indicates the more budget allocated to the movies, the higher the gross revenue with correlation of 74.03%. This insight is quite expected since movies with higher budget would imply stronger cast members, favorite writer, better props or resources allocation to higher visual quality which could potentially lead to higher tickets sale and gross revenue.
+
+##### Second expected insights
+
+In general, there's a expectation that movies with higher review ratings and gross revenue would have more awards or nominations. It would be interesting to validate if this hypothesis is actually present.
+
+```{r, warning=FALSE, fig.height=4, fig.width=7}
+rating_col = c("imdbRating","tomatoRating")
+scatter_rating_award_ls = NULL
+for (i in 1:length(rating_col)){
+  rating = rating_col[i]
+  corr_rating_award = round(cor(movies_m2[[rating]], movies_m2$AwardsModified, use="complete.obs"),4)
+  corr_rating_award_grob = grobTree(textGrob(corr_rating_award , x=0.1,  y=0.95, hjust=0))
+  scatter_rating_award_ls[[i]] = ggplot(movies_m2, aes_string(x=rating, y="AwardsModified")) +
+    geom_point(color="#ff5722") + 
+    geom_smooth(color="#607d8b") +
+    annotation_custom(corr_rating_award_grob) +
+    labs(x=rating,
+         y="Number of Awards/Nominations")
+}
+do.call(grid.arrange, c(scatter_rating_award_ls, ncol=2))
+```
+
+Two ratings are chosen to represent review ratings, one from imdb and one from rotten tomato, since from previous analysis, ratings among each imdb or rotten tomato are highly correlated.
+
+For both imdb and rotten tomato ratings, both demonstrate positive relationship between number of awards or nominations, i.e. the higher the ratings, the more the number of awards/nominations. From the scatterplot and correlation, stronger positive relationship are shown for Rotten Tomato Rating compare to imdb.
+
+```{r, warning=FALSE, fig.height=4, fig.width=7}
+ggplot(movies_m2, aes(x=Gross, y=AwardsModified)) +
+    geom_point(color="#ff5722") + 
+    geom_smooth(color="#607d8b") +
+    annotation_custom(corr_rating_award_grob) +
+    labs(x="Gross Revenue",
+         y="Number of Awards/Nominations")
+```
+
+Similar to rating, there's a positive relationship between gross revenue and number of awards / nominations with correlation of 34.34%.
+
+#### Part 2: One new insights that is unexpected
+It would be interesting to know if there's a relationship between number of languages translated for movies have better review ratings.
+
+```{r, warning=FALSE, fig.height=4, fig.width=6}
+movies_m2$LanguageNum = sapply(strsplit(movies_m2$Language,','),length)
+summary(movies_m2$LanguageNum)
+ggplot(movies_m2, aes(x=LanguageNum)) +
+  geom_bar(fill="#af657a") +
+  labs(x="Number of Language per Movie",
+       y="Frequency",
+       title="Number of Lanugage per Movie Distribution")
+
+movies_m2$LanguageNum = as.factor(movies_m2$LanguageNum)
+rating_col = c("imdbRating","tomatoRating")
+bp_rating_lang_ls = NULL
+for (i in 1:length(rating_col)){
+  rating = rating_col[i]
+  bp_rating_lang_ls[[i]] = ggplot(movies_m2, aes_string(x="LanguageNum", y=rating)) +
+    geom_boxplot(aes(fill=LanguageNum), show.legend = FALSE) + 
+    labs(x="Number of Language per Movie",
+         y=rating)
+}
+do.call(grid.arrange, c(bp_rating_lang_ls, ncol=2))
+```
+
+A new column is created to capture number of languages released for each movie records. Examining the descriptive summary and distribution of number of languages column, most of the movie have records with only 1 lanugage and maximum number of languages per movie is 12.
+
+Similar to the previous insight, two representative ratings, imdbRating and tomatoRating are selected for examining against number of languages released for movies.
+
+Examining boxplots for both ratings, the expected hypothesis with higher ratings associated with higher number of language per movie only exist for movie with 1-6 number of languages. When number of language is 7 and 9, there's a drop in the median ratings but higher when the number of language is 8 and 12. From the result. This is an interesting finding that on average the number of languages increases doesn't necessary associated with higher ratings.
