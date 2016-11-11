@@ -1,0 +1,488 @@
+---
+title: "Homework 3"
+author: 'Sherry Kawing Lau (GTID: klau37)'
+date: "11/01/2016"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(mlbench)
+library(knitr)
+library(caret)
+library(reshape2)
+library(ggplot2)
+library(glm2)
+```
+
+#### Q1. Write down detailed formulas for the gradient of the loss function in the case of logistic regression, and write detailed pseudo code for training a LR model based on gradient descent. Count how many operations are done per each gradient descent iteration and explain how you computed your answer (use the following variables in your answer: n for the number of examples and d for the dimensionality).
+
+
+Given a training set ${(x_i, y_i): i = 1,,,,n}$, $y_i \in {0,1}$, and $x_i \in R^{d+1}$, where n = total number of training examples and d = dimensionality, the learning goal is to find the optimal weight vector $\omega$
+
+
+Assuming Gaussian distributions with shared covariance matric for each class, logistic regression has sigmoid function :
+
+$P(y=1|x) = \dfrac{1}{1+e^{-(\omega^\intercal x_i + \omega_0)}}$
+
+$P(y=0|x) = 1 - P(y=1|x) = \dfrac{e^{\omega^\intercal x_i + \omega_0}}{1+e^{-(\omega^\intercal x_i + \omega_0)}}$
+
+
+
+Using maximum likelihodd estimation:
+
+max $L = \prod_{i=1}^n P(y_i|x_i)$
+
+$\equiv$ max $L = ln(\prod_{i=1}^n P(y_i|x_i))$
+
+$\equiv$ max $L = \sum_{i=1}^n ln(P(y_i|x_i))$
+
+$\equiv$ min $L = -\dfrac{1}{n} \sum_{i=1}^n ln(P(y_i|x_i))$
+
+$\equiv$ min $L = -\dfrac{1}{n} \sum_{i=1}^n ln( (h_\omega(x_i)^{y_i}) (1-h_\omega(x_i)^{1-y_i}) )$
+
+$\equiv$ min $L = -\dfrac{1}{n} \sum_{i=1}^n(y_i ln(h_\omega(x_i)) + (1-y_i)ln(1-h_\omega(x_i)))$
+
+where $h_\omega(x_i) = \dfrac{1}{1+e^{-(\omega^\intercal x_i + \omega_0)}}$
+
+
+
+Taking gradient of L_i with respect to $\omega$:
+
+$\bigtriangledown_\omega L_i = \dfrac{y_i}{h_\omega(x_i)} \bigtriangledown_\omega h - \dfrac{1-y_i}{1-h_\omega(x_i)} \bigtriangledown_\omega h$
+
+$= \dfrac{y_i}{h} h(1-h)x_i - \dfrac{1-y_i}{1-h} h(1-h)x_i$
+
+$= (y_i(1-h) - (1-y_i)h)x_i$
+
+$= (y_i - y_i h - h + y_i h)x_i$
+
+$= (y_i - h_\omega(x_i))x_i$
+
+Taking all examples, n:
+
+$\bigtriangledown_\omega L = \sum_{i=1}^n((y_i - h_\omega(x_i))x_i)$
+
+To find the optimal $\omega$, we need to use gradient descent method. The update rule for the batch method is:
+
+$\omega \leftarrow \omega + \alpha \sum_{i=1}^n(y_i - h_\omega(x_i))x_i$, where $\alpha$ is the learning rate.
+
+Pseudo code based on gradient descent:
+
+1. Initialize at step t = 0 to $\omega(0)$
+
+2. for t = 0,1,2... 
+compute the gradient $g_t = \bigtriangledown_\omega(t) L$, 
+move in the direction $v_t = -g_t$, 
+update the weights: $\omega(t+1) = \omega(t) + \alpha v_t$,
+iterate until cost lower up the convergence threshold,
+end for
+
+3. return the final weights
+
+#### Q2. Implement in R logistic regression based on gradient descent. To avoid unnecessary slow- down use vectorized code when computing the gradient (avoid loops).
+
+```{r, warnings=FALSE}
+# Function to fit logistic regression based on gradient descent
+logreg_gd = function(x, y, initial_w, alpha, maxit, conv_thres){
+  if(is.matrix(x)&is.numeric(x)){
+    if(any(!is.na(x))){
+      # Implement Sigmoid function
+      sigmoid = function(z){
+        s = 1/(1+exp(-z))
+        return(s)
+      }
+      # Implement Cost function 
+      cost = function(w){
+        n = nrow(x)
+        g = sigmoid(x %*% c(w))
+        L = -(1/n)*(sum((y*log(g)) + ((1-y)*log(1-g))))
+        return(L)
+      }
+      # Define the gradient function
+      gradient = function(w){
+        n = nrow(x)
+        g = sigmoid(x %*% c(w))
+        grad = (1/n)*(t(x) %*% (g-y))
+        return(t(grad))
+      }
+      gradient_descent = function(initial_w, alpha, maxit, conv_thres){
+        # Initial w
+        w = initial_w
+        c = cost(w)
+        c_initial = cost(w)
+        c_history = NULL
+        # Update w in maxit times
+        for(i in 1:maxit){
+          if((c_initial - c)<conv_thres){
+            w = w - alpha * gradient(w)
+            c = cost(w)
+            c_history[[i]] = cost(w)
+          }
+        }
+        return(list(w=w, c_history=c_history, iter=length(c_history)))
+      }
+      # Derive w and c using gradient descent
+      gd = gradient_descent(initial_w, alpha, maxit, conv_thres)
+      w = gd$w
+      c_history = gd$c_history
+      iter = gd$iter
+      
+      return(list(w_optm = w, c_history = c_history, iter = iter))
+    } else{
+      print("x contains missing values")
+    }
+  } else{
+    print("x as to be a numeric matrix")
+  }
+}
+
+# Function to predict probability based on fitted logreg_gd
+logreg_gd_predict = function(new_x, w_optm){
+  sigmoid = function(z){
+    g = 1/(1+exp(-z))
+    return(g)
+  }
+  prob = sigmoid(new_x %*% c(w_optm))
+  return(prob)
+}
+
+```
+
+#### Q3. Train and evaluate your code on the BreastCancer data from the mlbench R package. Specifically, randomly divide the dataset into 70% for training and 30% for testing and train on the training set and report your accuracy (fraction of times the model made a mistake) on the train set and on the test set. Repeat the random partition of 70% and 30% 10 times and average the test accuracy results over the 10 repetitions. Try several different selections of starting positions - did this change the parameter value that the model learned? Try to play with different convergence criteria to get better accuracy.
+
+```{r, warnings=FALSE}
+# Load Breast Cancer data
+data("BreastCancer")
+
+# Function to split data into 70% training and 30% testing with 10 times repetitions and 
+# fit logistic regression from Q2 function - logreg_gd
+logreg_gd_split_repeat = function(initial_w, alpha, conv_thres){
+  # Function to impute missing by column mean
+  impute_mean = function(x){
+     x = as.numeric(as.character(x))
+     x[is.na(x)] = mean(x, na.rm=TRUE)
+     return(x)
+  }
+  # Function to calculate accuracy
+  accuracy = function(y_pred, y){
+    e = y - y_pred
+    a = length(e[e==0])/length(y)
+    return(a)
+  }
+  lr_c_history = NULL
+  accuracy_train = NULL
+  accuracy_test = NULL
+  for (i in 1:10){
+    # Partition dataset into 70% training and 30% testing
+    train_idx = createDataPartition(BreastCancer$Class, p = 0.7)
+    train = BreastCancer[unlist(train_idx),]
+    test = BreastCancer[-unlist(train_idx),]
+    
+    trainX = train[,2:10]
+    trainX = apply(trainX, 2, impute_mean)
+    trainY = ifelse(train$Class=="benign",1,0)
+    
+    testX = test[,2:10]
+    testX = apply(testX, 2, impute_mean)
+    testY = ifelse(test$Class=="benign",1,0)
+    
+    # Fit Logistic Regression using gradient descent
+    lr_fit = logreg_gd(trainX, trainY, initial_w, alpha, maxit=5000, conv_thres)
+    lr_w = lr_fit$w_optm
+    lr_c_history[[i]] = lr_fit$c_history
+    train_prob = logreg_gd_predict(trainX, lr_w)
+    train_event = ifelse(train_prob>0.5,1,0)
+    test_prob = logreg_gd_predict(testX, lr_w)
+    test_event = ifelse(test_prob>0.5,1,0)
+    accuracy_train[[i]] = accuracy(train_event, trainY)
+    accuracy_test[[i]] = accuracy(test_event, testY)
+  }
+  avg_train_accuracy = mean(accuracy_train)
+  avg_test_accuracy = mean(accuracy_test)
+  return(list(avg_train_accuracy=avg_train_accuracy,
+              avg_test_accuracy=avg_test_accuracy,
+              c_history=lr_c_history))
+}
+```
+
+The function above apply logistic regression based on gradient descent implemented in Q2 with maximum iterations as 5000, on the fitting 70% randomly split of training dataset and predict on 30% of testing dataset. Accuracy is caluclated based on testing data. 10 randomly split, fitting model and prediction are performed and returnn the average testing accuracy. Note that probability cutoff for classifying 0 / 1 is 0.5 which arbitrarily selected.
+
+```{r, fig.width=7, fig.height=3.5, warning=FALSE}
+initial_w = rep(0, ncol(BreastCancer[,2:10]))
+alpha = 0.05
+conv_thres = 0.2
+fit = logreg_gd_split_repeat(initial_w, alpha, conv_thres)
+paste("Average Training Accuracy of 10 runs:", round(fit$avg_train_accuracy,4))
+paste("Average Testing Accuracy of 10 runs:", round(fit$avg_test_accuracy,4))
+c_history = as.matrix(plyr::ldply(fit$c_history, rbind))
+c_history = melt(c_history)
+colnames(c_history) = c("run", "iter", "cost")
+ggplot(c_history, aes(x=iter, y=cost, color=as.factor(run))) + 
+  geom_line() + 
+  labs(x="Iterations to meet convergence threshold",
+       y="Cost",
+       color="Run",
+       title="Cost across iterations for 10 repetitions")
+```
+
+To start, initialize the weight as all 0 (length of d=9), learning rate $\alpha$ 0.05 and convergence threshold as 0.2 (stop updating weight when difference between initial cost and updated cost is greater than and equal to convergence threshold).
+
+The plot above displayed the cost values over iterations of updating weights for the 10 repetitions. Notice that cost values over iterations for all runs are decreasing indicating that weight is converging.
+
+
+##### Different starting positions
+To see if there's differences in average accuracy, three set of initial weights apply below with $\alpha$ as 0.05 and convergence threshold as 0.2:
+
+1. all 0 (same as above)
+2. all 0.4 
+3. randomly selected values from {0, 0.05, ,,, 0.35, 0.4}
+
+```{r, fig.width=7, fig.height=6.5, warning=FALSE}
+alpha = 0.05
+conv_thres = 0.2
+
+# Setup 1: all 0
+initial_w1 = rep(0, ncol(BreastCancer[,2:10]))
+fit1 = logreg_gd_split_repeat(initial_w1, alpha, conv_thres)
+paste("Average Training Accuracy of 10 runs:", round(fit1$avg_train_accuracy,4))
+paste("Average Testing Accuracy of 10 runs:", round(fit1$avg_test_accuracy,4))
+
+# Setup 2: all 0.4
+initial_w2 = rep(0.4, ncol(BreastCancer[,2:10]))
+fit2 = logreg_gd_split_repeat(initial_w2, alpha, conv_thres)
+paste("Average Training Accuracy of 10 runs:", round(fit2$avg_train_accuracy,4))
+paste("Average Testing Accuracy of 10 runs:", round(fit2$avg_test_accuracy,4))
+
+# Setup 3: randomly selected values from {0, 0.05,,, 0.35, 0.4}
+initial_w3 = sample(seq(0,0.4,0.05), size=9, replace=TRUE)
+fit3 = logreg_gd_split_repeat(initial_w3, alpha, conv_thres)
+paste("Average Training Accuracy of 10 runs:", round(fit3$avg_train_accuracy,4))
+paste("Average Testing Accuracy of 10 runs:", round(fit3$avg_test_accuracy,4))
+```
+
+Comparing the three setup, initial weights with all 0 generate the highest training and testing accuracy.
+
+##### Different convergence criteria
+
+There's two convergence criteria can be changed for testing:
+
+1. alpha - 0.05, 0.15, 0.25
+2. convergence threshold - 0.1, 0.2, 0.3
+
+using initial weight with all 0 for testing all combination of parameters.
+
+```{r, fig.width=7, fig.height=6.5, warning=FALSE}
+alpha_ls = c(0.05, 0.15, 0.25)
+conv_ls = c(0.1, 0.2, 0.3)
+initial_w = rep(0, ncol(BreastCancer[,2:10]))
+
+comb = unlist(lapply(alpha_ls,function(a) lapply(conv_ls, function (b) c(a, b))),recursive=FALSE)
+
+row = NULL
+for(i in 1:length(comb)){
+  alpha = unlist(comb[i])[1]
+  conv_thres = unlist(comb[i])[2]
+  fit = logreg_gd_split_repeat(initial_w, alpha, conv_thres)
+  row[[i]] = c(alpha, conv_thres, fit$avg_train_accuracy, fit$avg_test_accuracy)
+}
+alpha_conv = data.frame(do.call(rbind, row))
+colnames(alpha_conv) = c("alpha", "convergence threshold", "average train accuracy", "average test accuracy")
+kable(alpha_conv)
+```
+
+The above table captures the average training and testing accuracy for all combination when $alpha$ = 0.05, 0.15, 0.25 and convergence threshold = 0.1, 0.2, 0.3. From the table, average training and testing accuracy is the highest when alpha = 0.05 and convergence threshold = 0.3. It means that highest accuracy is found with lower learning rate and higher convergence threshold.
+
+
+#### Q4. Repeat (3) but this time using logistic regression training code from an R package such as glm2. How did the accuracy in (4) compare to the accuracy in (3).
+
+```{r, warnings=FALSE}
+logreg_glm_split_repeat = function(split_size, initial_w, conv_thres){
+  # Function to impute missing by column mean
+  impute_mean = function(x){
+     x = as.numeric(as.character(x))
+     x[is.na(x)] = mean(x, na.rm=TRUE)
+     return(x)
+  }
+  # Function to calculate accuracy
+  accuracy = function(y_pred, y){
+    e = y - y_pred
+    a = length(e[e==0])/length(y)
+    return(a)
+  }
+  lr_c_history = NULL
+  accuracy_train = NULL
+  train_neg_loglikelihood = NULL
+  accuracy_test = NULL
+  test_neg_loglikelihood = NULL
+  for (i in 1:10){
+    # Partition dataset into 70% training and 30% testing
+    train_idx = createDataPartition(BreastCancer$Class, p = split_size)
+    train = BreastCancer[unlist(train_idx),]
+    test = BreastCancer[-unlist(train_idx),]
+    
+    trainX = train[,2:10]
+    trainX = apply(trainX, 2, impute_mean)
+    trainY = ifelse(train$Class=="benign",1,0)
+    train = data.frame(cbind(trainX, trainY))
+    
+    testX = test[,2:10]
+    testX = apply(testX, 2, impute_mean)
+    testY = ifelse(test$Class=="benign",1,0)
+    
+    # Fit Logistic Regression using glm2
+    train$trainY = as.factor(train$trainY)
+    glm_fit = glm2(trainY~., 
+                   data = train,
+                   family=binomial,
+                   start = initial_w,
+                   control=list(maxit=5000, epsilon=conv_thres))
+    glm_w = glm_fit$coefficients
+    # Train Accuracy
+    train_prob = glm_fit$fitted.values
+    train_event = ifelse(train_prob>0.5,1,0)
+    accuracy_train[[i]] = accuracy(train_event, trainY)
+    # Train Loss 
+    train_neg_loglikelihood[[i]] = -mean(trainY * log(train_prob) + (1-trainY) * log(1-train_prob))
+    # Test Accuracy
+    test_prob = predict(glm_fit, newdata=data.frame(testX), type="response")
+    test_event = ifelse(test_prob>0.5,1,0)
+    accuracy_test[[i]] = accuracy(test_event, testY)
+    # Test Loss
+    test_neg_loglikelihood[[i]] = -mean(testY * log(test_prob) + (1-testY) * log(1-test_prob))
+  }
+  avg_train_accuracy = mean(accuracy_train)
+  avg_train_neg_logll = mean(train_neg_loglikelihood)
+  avg_test_accuracy = mean(accuracy_test)
+  avg_test_neg_logll = mean(test_neg_loglikelihood)
+  return(list(avg_train_accuracy=avg_train_accuracy,
+              avg_train_neg_logll=avg_train_neg_logll,
+              avg_test_accuracy=avg_test_accuracy,
+              avg_test_neg_logll=avg_test_neg_logll))
+}
+```
+
+The function above apply logistic regression based on glm2 with maximum iterations as 5000, on the fitting 70% randomly split of training dataset and predict on 30% of testing dataset. Accuracy is caluclated based on training and testing data. 10 randomly split, fitting model and prediction are performed and returnn the average testing accuracy. Note that probability cutoff for classifying 0 / 1 is 0.5 which arbitrarily selected.
+
+```{r, fig.width=7, fig.height=3.5, warning=FALSE}
+initial_w = rep(0, 10)
+conv_thres = 0.2
+glm_fit = logreg_glm_split_repeat(0.7, initial_w, conv_thres)
+paste("Average Training Accuracy of 10 runs:", round(glm_fit$avg_train_accuracy,4))
+paste("Average Testing Accuracy of 10 runs:", round(glm_fit$avg_test_accuracy,4))
+```
+
+Using the same setup as Q3 except for $alpha$, i.e. initial weights as all 0, convergence threshold as 0.2. Average training and testing accuracy across 10 runs is ~96% which is ~10% higher than the one applied in Q3.
+
+##### Different starting positions
+Similar to Q3, three set of initial weights apply below with convergence threshold as 0.2:
+
+1. all 0 (same as above)
+2. all 0.4 
+3. randomly selected values from {0, 0.05, ,,, 0.35, 0.4}
+
+```{r, fig.width=7, fig.height=3.5, warning=FALSE}
+conv_thres = 0.2
+
+# Setup 1: all 0
+initial_w1 = rep(0, 10)
+glm_fit1 = logreg_glm_split_repeat(0.7, initial_w1, conv_thres)
+paste("Average Training Accuracy of 10 runs:", round(glm_fit1$avg_train_accuracy,4))
+paste("Average Testing Accuracy of 10 runs:", round(glm_fit1$avg_test_accuracy,4))
+
+# Setup 2: all 0.4
+initial_w2 = rep(0.4, 10)
+glm_fit2 = logreg_glm_split_repeat(0.7, initial_w2, conv_thres)
+paste("Average Training Accuracy of 10 runs:", round(glm_fit2$avg_train_accuracy,4))
+paste("Average Testing Accuracy of 10 runs:", round(glm_fit2$avg_test_accuracy,4))
+
+# Setup 3: randomly selected values from {0, 0.05,,, 0.35, 0.4}
+initial_w3 = sample(seq(0,0.4,0.05), size=10, replace=TRUE)
+glm_fit3 = logreg_glm_split_repeat(0.7, initial_w3, conv_thres)
+paste("Average Training Accuracy of 10 runs:", round(glm_fit3$avg_train_accuracy,4))
+paste("Average Testing Accuracy of 10 runs:", round(glm_fit3$avg_test_accuracy,4))
+```
+
+Similar to the answer for Q3, average training and testing accuracy is the highest when initial weights are all 0 compare to setup with all 0.4 or randomly selected weights.
+
+##### Different convergence criteria
+Since learning rate is not an input parameter, only convergence threshold can be used to test performance. Similar to Q3, convergence threshold to try is 0.1, 0.2, 0.3 with the initial weights as all 0.
+
+```{r, fig.width=7, fig.height=3.5, warning=FALSE}
+conv_ls = c(0.1, 0.2, 0.3)
+initial_w = rep(0, 10)
+
+row = NULL
+for(i in 1:length(conv_ls)){
+  conv_thres = conv_ls[i]
+  glm_fit = logreg_glm_split_repeat(0.7, initial_w, conv_thres)
+  row[[i]] = c(conv_thres, glm_fit$avg_train_accuracy, glm_fit$avg_test_accuracy)
+}
+conv = data.frame(do.call(rbind, row))
+colnames(conv) = c("convergence threshold", "average train accuracy", "average test accuracy")
+kable(conv)
+```
+
+Similar to Q3, average training and testing accuracy increases as convergence threshold increases.
+
+
+#### Q5. Repeat (4), but replace the 70%-30% train-test split with each of the following splits: 5%-95%, 10%-90%, ..., 95%-5%. Graph the accuracy over the training set and over the testing set as a function of the size of the train set. Remember to average the accuracy over 10 random divisions of the data into train and test sets of the above sizes so the graphs will be less noisy.
+
+```{r, fig.width=7, fig.height=3.5, warning=FALSE}
+train_size = seq(0.05, 0.95, 0.05)
+initial_w = rep(0, 10)
+conv_thres = 0.1
+row = NULL
+for(i in 1:length(train_size)){
+  split_size = train_size[i]
+  glm_fit = logreg_glm_split_repeat(split_size, initial_w, conv_thres)
+  row[[i]] = c(split_size, glm_fit$avg_train_accuracy, glm_fit$avg_test_accuracy)
+}
+split = data.frame(do.call(rbind, row))
+colnames(split) = c("train_size", "train_accuracy", "test_accuracy")
+ggplot(split) + 
+  geom_line(aes(x=train_size, y=train_accuracy, colour="train"), size=1) + 
+  geom_line(aes(x=train_size, y=test_accuracy, colour="test"), size=1) +
+  scale_color_manual(values=c("train"="#00abc5", "test"="#c45c57")) +
+  labs(x="Training Set Proportion",
+       y="Average Accuracy across 10 runs",
+       colour="",
+       title="Average Training and Testing Accuracy for different Training size")
+```
+
+Using the function logreg_glm_split_repeat implemented in Q4, changing the training set proportion from (0.05, 0.10,,, 0.90, 0.95). 
+
+The chart above displays the average training accuracy (blue) and average testing accuracy (red) across 10 runs using the initial weights as all 0 and convergence threshold as 0.1.
+
+Notice from the chart, as training set proportion increases, average TRAIN accuracy decreases but average TEST accuracy increases. When training set portion near 0.5, average TRAIN accuracy and TEST accuracy start getting closer.
+
+
+#### Q6. Repeat (5) but instead of graphing the train and test accuracy, graph the logistic regression loss function (negative log likelihood) over the train set and over the test set as a function of the train set size.
+
+
+```{r, fig.width=7, fig.height=3.5, warning=FALSE}
+train_size = seq(0.05, 0.95, 0.05)
+initial_w = rep(0, 10)
+conv_thres = 0.1
+row_neg_logll = NULL
+for(i in 1:length(train_size)){
+  split_size = train_size[i]
+  glm_fit = logreg_glm_split_repeat(split_size, initial_w, conv_thres)
+  row_neg_logll[[i]] = c(split_size, glm_fit$avg_train_neg_logll, glm_fit$avg_test_neg_logll)
+}
+split_neg_logll = data.frame(do.call(rbind, row_neg_logll))
+colnames(split_neg_logll) = c("train_size", "train_negll", "test_negll")
+ggplot(split_neg_logll) + 
+  geom_line(aes(x=train_size, y=train_negll, colour="train"), size=1) + 
+  geom_line(aes(x=train_size, y=test_negll, colour="test"), size=1) +
+  scale_color_manual(values=c("train"="#00abc5", "test"="#c45c57")) +
+  labs(x="Training Set Proportion",
+       y="Average Negative Log Likelihood across 10 runs",
+       colour="",
+       title="Average Training and Testing Loss Function Values for different Training size")
+```
+
+Using the function logreg_glm_split_repeat implemented in Q4, changing the training set proportion from (0.05, 0.10,,, 0.90, 0.95). 
+
+The chart above displays the average training loss function value (blue) and average testing loss function value (red) across 10 runs using the initial weights as all 0 and convergence threshold as 0.1.
+
+Notice from the chart, opposite from accuracy in Q5, as training set proportion increases, average TRAIN loss function value increases but average TEST function decreases in general (small fluctuation when training set proportion < 0.25). When training set portion near 0.5, average TRAIN and TEST loss function values start getting closer.
